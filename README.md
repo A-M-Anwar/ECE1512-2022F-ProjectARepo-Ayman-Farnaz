@@ -1,5 +1,8 @@
 # ECE1512-2022F-ProjectARepo-Ayman-Farnaz
-## ggroup members:
+
+This repo includes the experiments conducted by this goup in ECE1512 Project A.
+
+## group members:
 ### Student 1:
 #### Name: Ayman Mohamed Anwar Mohamed
 #### Name: 1009079462
