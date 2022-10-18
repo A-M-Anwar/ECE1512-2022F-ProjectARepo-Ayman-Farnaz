@@ -40,8 +40,9 @@ def getTeacherModel():
 
 def getTeachingAssistantModel():
     model = tf.keras.Sequential()
-    # your code start from here for step 2
     model.add(tf.keras.layers.Flatten(input_shape=(28, 28, 1)))
+    model.add(tf.keras.layers.Dense(784 , activation='relu'))
+    model.add(tf.keras.layers.Dense(784 , activation='relu'))
     model.add(tf.keras.layers.Dense(784 , activation='relu'))
     model.add(tf.keras.layers.Dense(784 , activation='relu'))
     model.add(tf.keras.layers.Dense(NUM_CLASSES))
@@ -49,7 +50,6 @@ def getTeachingAssistantModel():
 
 def getStudentModel():
     model = tf.keras.Sequential()
-    # your code start from here for step 2
     model.add(tf.keras.layers.Flatten(input_shape=(28, 28, 1)))
     model.add(tf.keras.layers.Dense(784 , activation='relu'))
     model.add(tf.keras.layers.Dense(784 , activation='relu'))
