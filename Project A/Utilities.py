@@ -212,3 +212,62 @@ def testModel(model,testData):
     print("model Testing Accuracy: " + '{:.2f}%'.format(
         (num_correct / num_total) * 100))
     return (num_correct / num_total) * 100
+
+
+def train_evaluate_resnet(model,trainingData, testingData, trainingLabel, testLabel):
+    """Perform training and evaluation for the teacher model model.
+
+    Args:
+    model: Instance of tf.keras.Model.
+    compute_loss_fn: A function that computes the training loss given the
+        images, and labels.
+    """
+
+    # your code start from here for step 4
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+
+    for epoch in range(1, NUM_EPOCHS + 1):
+        # Run training.
+        print('Epoch {}: '.format(epoch), end='')
+        for i in range(0,trainingData.shape[0] -1,2):
+            with tf.GradientTape() as tape:
+                loss_value = compute_loss(model,trainingData[i:i+1],trainingLabel[i:i+1])
+            grads = tape.gradient(loss_value, model.trainable_variables)
+            optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
+        # Run evaluation.
+        num_correct = 0
+        num_total = testingData.shape[0]
+        for i in range(0,testingData.shape[0] -1, 2):
+            # your code start from here for step 4
+            num_correct += compute_num_correct(model,testingData[i:i+1],testLabel[i:i+1])[0]
+        print("Class_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
+
+def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingData, testingData, trainingLabel, testLabel, alpha, temprature):
+    """Perform training and evaluation for the teacher model model.
+
+    Args:
+    model: Instance of tf.keras.Model.
+    compute_loss_fn: A function that computes the training loss given the
+        images, and labels.
+    """
+
+    # your code start from here for step 4
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+
+    for epoch in range(1, NUM_EPOCHS + 1):
+        # Run training.
+        print('Epoch {}: '.format(epoch), end='')
+        for i in range(0,len(trainingLabel) -1, 2):
+            with tf.GradientTape() as tape:
+                loss_value = compute_student_loss_using_KD(studentModel, teacherModel,trainingData[i:i+1],trainingLabel[i:i+1], alpha, temprature)
+            grads = tape.gradient(loss_value, studentModel.trainable_variables)
+            optimizer.apply_gradients(zip(grads, studentModel.trainable_variables))
+
+        # Run evaluation.
+        num_correct = 0
+        num_total = builder.info.splits['test'].num_examples
+        for i in range(0,len(testLabel)-1, 2):
+            # your code start from here for step 4
+            num_correct += compute_num_correct(studentModel,testingData[i:i+1],testLabel[i:i+1])[0]
+        print("Class_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
