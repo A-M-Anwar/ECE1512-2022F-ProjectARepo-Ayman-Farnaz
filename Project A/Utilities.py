@@ -1,11 +1,12 @@
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from typing import Union
-
+import cv2
+import os
 
 builder = tfds.builder('mnist')
 BATCH_SIZE = 256
-NUM_EPOCHS = 12
+NUM_EPOCHS = 2
 NUM_CLASSES = 10 
 
 def preprocess(x):
@@ -229,18 +230,18 @@ def train_evaluate_resnet(model,trainingData, testingData, trainingLabel, testLa
     for epoch in range(1, NUM_EPOCHS + 1):
         # Run training.
         print('Epoch {}: '.format(epoch), end='')
-        for i in range(0,trainingData.shape[0] -1,2):
+        for i in range(len(trainingData)):
             with tf.GradientTape() as tape:
-                loss_value = compute_loss(model,trainingData[i:i+1],trainingLabel[i:i+1])
+                loss_value = compute_loss(model,trainingData[i],trainingLabel[i])
             grads = tape.gradient(loss_value, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
         # Run evaluation.
         num_correct = 0
-        num_total = testingData.shape[0]
-        for i in range(0,testingData.shape[0] -1, 2):
+        num_total = (32 * len(testingData) -1  ) + testingData[-1].shape[0]
+        for i in range(len(testingData)):
             # your code start from here for step 4
-            num_correct += compute_num_correct(model,testingData[i:i+1],testLabel[i:i+1])[0]
+            num_correct += compute_num_correct(model,testingData[i],testLabel[i])[0]
         print("Class_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
 
 def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingData, testingData, trainingLabel, testLabel, alpha, temprature):
@@ -258,16 +259,36 @@ def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingDat
     for epoch in range(1, NUM_EPOCHS + 1):
         # Run training.
         print('Epoch {}: '.format(epoch), end='')
-        for i in range(0,len(trainingLabel) -1, 2):
+        for i in range(len(trainingData)):
             with tf.GradientTape() as tape:
-                loss_value = compute_student_loss_using_KD(studentModel, teacherModel,trainingData[i:i+1],trainingLabel[i:i+1], alpha, temprature)
+                loss_value = compute_student_loss_using_KD(studentModel, teacherModel,trainingData[i],trainingLabel[i], alpha, temprature)
             grads = tape.gradient(loss_value, studentModel.trainable_variables)
             optimizer.apply_gradients(zip(grads, studentModel.trainable_variables))
 
         # Run evaluation.
         num_correct = 0
-        num_total = builder.info.splits['test'].num_examples
-        for i in range(0,len(testLabel)-1, 2):
+        num_total = (32 * len(testingData) -1  ) + testingData[-1].shape[0]
+        for i in range(len(testingData)):
             # your code start from here for step 4
-            num_correct += compute_num_correct(studentModel,testingData[i:i+1],testLabel[i:i+1])[0]
+            num_correct += compute_num_correct(studentModel,testingData[i],testLabel[i])[0]
         print("Class_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
+
+def testTransferedModel(model,testData, testLabel):
+    num_correct = 0
+    num_total = (32 * len(testData) -1  ) + testData[-1].shape[0]
+
+    for i in range(len(testData)):
+        num_correct += compute_num_correct(model,testData[i],testLabel[i])[0]
+    print("model Testing Accuracy: " + '{:.2f}%'.format(
+        (num_correct / num_total) * 100))
+    return (num_correct / num_total) * 100
+
+def load_mhist_images(folder):
+    images = []
+    file_names = []
+    for filename in os.listdir(folder):
+        img = cv2.imread(os.path.join(folder,filename))
+        if img is not None:
+            images.append(img)
+            file_names.append(filename)
+    return images, file_names
