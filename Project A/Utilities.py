@@ -3,10 +3,13 @@ import tensorflow_datasets as tfds
 from typing import Union
 import cv2
 import os
+import math
+import pandas as pd
+import numpy as np
 
 builder = tfds.builder('mnist')
 BATCH_SIZE = 256
-NUM_EPOCHS = 2
+NUM_EPOCHS = 12
 NUM_CLASSES = 10 
 
 def preprocess(x):
@@ -215,7 +218,7 @@ def testModel(model,testData):
     return (num_correct / num_total) * 100
 
 
-def train_evaluate_resnet(model,trainingData, testingData, trainingLabel, testLabel):
+def train_and_evaluate(model,trainingData, testingData, trainingLabel, testLabel, nEpochs, learingRate):
     """Perform training and evaluation for the teacher model model.
 
     Args:
@@ -225,9 +228,9 @@ def train_evaluate_resnet(model,trainingData, testingData, trainingLabel, testLa
     """
 
     # your code start from here for step 4
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learingRate)
 
-    for epoch in range(1, NUM_EPOCHS + 1):
+    for epoch in range(1, nEpochs + 1):
         # Run training.
         print('Epoch {}: '.format(epoch), end='')
         for i in range(len(trainingData)):
@@ -244,7 +247,7 @@ def train_evaluate_resnet(model,trainingData, testingData, trainingLabel, testLa
             num_correct += compute_num_correct(model,testingData[i],testLabel[i])[0]
         print("Class_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
 
-def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingData, testingData, trainingLabel, testLabel, alpha, temprature):
+def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingData, testingData, trainingLabel, testLabel, alpha, temprature, nEpochs, learingRate):
     """Perform training and evaluation for the teacher model model.
 
     Args:
@@ -254,9 +257,9 @@ def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingDat
     """
 
     # your code start from here for step 4
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learingRate)
 
-    for epoch in range(1, NUM_EPOCHS + 1):
+    for epoch in range(1, nEpochs + 1):
         # Run training.
         print('Epoch {}: '.format(epoch), end='')
         for i in range(len(trainingData)):
@@ -292,3 +295,74 @@ def load_mhist_images(folder):
             images.append(img)
             file_names.append(filename)
     return images, file_names
+
+def getresnetModel():
+    resNetBase= tf.keras.applications.resnet_v2.ResNet50V2(
+        include_top = False,
+        weights='imagenet',
+        input_shape=(224,224,3),
+        pooling=None,
+    )
+    for layer in resNetBase.layers[:-1]:
+        layer.trainable = False
+    x = tf.keras.layers.Flatten()(resNetBase.output)
+    x = tf.keras.layers.Dense(2)(x)
+    restNet = tf.keras.Model(inputs=resNetBase.input, outputs=x)
+    return restNet
+
+def getMobileNetModel():
+    studenModel2 = tf.keras.applications.mobilenet_v2.MobileNetV2(
+        include_top = False,
+        weights='imagenet',
+        input_shape=(224,224,3),
+        pooling=None,
+    )
+    for layer in studenModel2.layers[:-1]:
+        layer.trainable = False
+    x = tf.keras.layers.Flatten()(studenModel2.output)
+    x = tf.keras.layers.Dense(2)(x)
+    mobileNet = tf.keras.Model(inputs=studenModel2.input, outputs=x)
+    return mobileNet
+
+def dataBatching(X_train, y_train, X_test, y_test):
+    n_batches = 32
+    Train_Data = []
+    Train_Label = []
+    for i in range(math.ceil(X_train.shape[0]/n_batches)):
+        # Local batches and labels
+        local_X, local_y = X_train[i*n_batches:(i+1)*n_batches,], y_train[i*n_batches:(i+1)*n_batches,]
+        Train_Data.append(local_X)
+        Train_Label.append(local_y)
+
+    Test_Data = []
+    Test_Label = []
+    for i in range(math.ceil(X_test.shape[0]/n_batches)):
+        # Local batches and labels
+        local_X, local_y = X_test[i*n_batches:(i+1)*n_batches,], y_test[i*n_batches:(i+1)*n_batches,]
+        Test_Data.append(local_X)
+        Test_Label.append(local_y)
+    return Train_Data, Train_Label, Test_Data, Test_Label
+
+def loadMHIST(CSVfile,data):
+    labels = pd.read_csv(CSVfile, usecols = [1])
+    Partitions = pd.read_csv(CSVfile, usecols = [3])
+    labels = labels.to_numpy()
+    Partitions = Partitions.to_numpy()
+    X_train = []
+    X_test = []
+    y_train = []
+    y_test = []
+    for i in range(len(data)):
+        if Partitions[i] == 'train':
+            X_train.append(data[i])
+            if (labels[i] == 'SSA'):
+                y_train.append([1,0])
+            if (labels[i] == 'HP'):
+                y_train.append([0,1])
+        if Partitions[i] == 'test':
+            X_test.append(data[i])
+            if (labels[i] == 'SSA'):
+                y_test.append([1,0])
+            if (labels[i] == 'HP'):
+                y_test.append([0,1])
+    return np.asarray(X_train), np.asarray(y_train), np.asarray(X_test), np.asarray(y_test)
