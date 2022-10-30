@@ -2,7 +2,7 @@
 
 This repo includes the implementation of two projects as a part of a group work for the course ECE1512-2022 Digital Image Processing Course at the electrical Engineering Department UofT.
 
-* The first [Project A](./Project\ A/README.md) project is to apply Knowledge Distillation using different deep learning model on two datasets.  
+* The first [Project A](./Project%20A/README.md) project is to apply Knowledge Distillation using different deep learning model on two datasets.  
 
 ## group members:
 
