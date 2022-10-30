@@ -1,11 +1,12 @@
-# ECE1512-2022F-ProjectARepo-Ayman-Farnaz
+# ECE1512-2022 Digital Image Processing Course
 
-This repo includes the experiments conducted by this goup in ECE1512 Project A.
+This repo includes the implementation of two projects as a part of a group work for the course ECE1512-2022 Digital Image Processing Course at the electrical Engineering Department UofT.
+
+* The first [Project A](./Project\ A/README.md) project is to apply Knowledge Distillation using different deep learning model on two datasets.  
 
 ## group members:
-### Student 1:
-#### Name: Ayman Mohamed Anwar Mohamed
-#### Id: 1009079462
-### Student 2:
-#### Name: Farnaz Khodami
-#### Id: 
+
+| Group Member | Name | Id |
+|--------------|------|----|
+| m1 | Ayman Mohamed | 1009079462|
+| m2 | Farnaz Khodami | |
