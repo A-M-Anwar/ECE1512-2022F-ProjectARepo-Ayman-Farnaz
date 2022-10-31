@@ -6,10 +6,11 @@ import os
 import math
 import pandas as pd
 import numpy as np
+from sklearn.metrics import confusion_matrix
 
 builder = tfds.builder('mnist')
 BATCH_SIZE = 256
-NUM_EPOCHS = 12
+NUM_EPOCHS = 2
 NUM_CLASSES = 10 
 
 def preprocess(x):
@@ -288,6 +289,8 @@ def testTransferedModel(model,testData, testLabel):
         num_correct += compute_num_correct(model,testData[i],testLabel[i])[0]
     print("model Testing Accuracy: " + '{:.2f}%'.format(
         (num_correct / num_total) * 100))
+    #print(compute_num_correct(model,testData[1],testLabel[1])[0])
+    #sensitivity_specificity(model,testData[1],testLabel[1])
     return (num_correct / num_total) * 100
 
 def load_mhist_images(folder):
@@ -307,7 +310,7 @@ def getresnetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    for layer in resNetBase.layers[:-1]:
+    for layer in resNetBase.layers[:]:
         layer.trainable = False
     x = tf.keras.layers.Flatten()(resNetBase.output)
     x = tf.keras.layers.Dense(2)(x)
@@ -321,7 +324,7 @@ def getMobileNetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    for layer in studenModel2.layers[:-1]:
+    for layer in studenModel2.layers[:]:
         layer.trainable = False
     x = tf.keras.layers.Flatten()(studenModel2.output)
     x = tf.keras.layers.Dense(2)(x)
@@ -356,17 +359,53 @@ def loadMHIST(CSVfile,data):
     X_test = []
     y_train = []
     y_test = []
+    len1=0
+    len2=0
     for i in range(len(data)):
         if Partitions[i] == 'train':
             X_train.append(data[i])
             if (labels[i] == 'SSA'):
                 y_train.append([1,0])
+                len1 = len1+1
             if (labels[i] == 'HP'):
                 y_train.append([0,1])
+                len2 = len2 + 1
         if Partitions[i] == 'test':
             X_test.append(data[i])
             if (labels[i] == 'SSA'):
                 y_test.append([1,0])
             if (labels[i] == 'HP'):
                 y_test.append([0,1])
+    print(len1,len2)
     return np.asarray(X_train), np.asarray(y_train), np.asarray(X_test), np.asarray(y_test)
+
+
+#def sensitivity_specificity(model, images, labels):
+    """Compute number of correctly classified images in a batch.
+
+    Args:
+    model: Instance of tf.keras.Model.
+    images: Tensor representing a batch of images.
+    labels: Tensor representing a batch of labels.
+
+    Returns:
+    Number of correctly classified images.
+    """
+#    negative = 0
+#    positive = 0
+#    negnum=0
+#    posnum=0
+#    class_logits = model(images, training=False)
+#    for i in range(len(labels)):
+#        if((labels[i]==(1,0)).all()):
+#            negnum +=1
+#            negative += tf.reduce_sum(tf.cast(tf.math.equal(tf.argmax(class_logits[i], -1), tf.argmax(labels[i], -1)), tf.float32))
+#        if((labels[i]==(0,1)).all()):
+#            posnum +=1
+#            positive += tf.reduce_sum(tf.cast(tf.math.equal(tf.argmax(class_logits[i], -1), tf.argmax(labels[i], -1)), tf.float32))
+#    print(negative)
+#    print(negnum)
+#    print(positive)
+#    print(posnum)
+    
+
