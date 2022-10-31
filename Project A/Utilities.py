@@ -93,7 +93,7 @@ def compute_loss(model,images, labels):
     cross_entropy_loss_value = tf.math.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(logits=subclass_logits,labels=labels))
     return cross_entropy_loss_value
 
-def train_and_evaluate(model,trainingData, testingData):
+def train_evaluate(model,trainingData, testingData):
     """Perform training and evaluation for the teacher model model.
 
     Args:
@@ -101,7 +101,7 @@ def train_and_evaluate(model,trainingData, testingData):
     compute_loss_fn: A function that computes the training loss given the
         images, and labels.
     """
-
+    trainAcc = []
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
@@ -122,6 +122,8 @@ def train_and_evaluate(model,trainingData, testingData):
             num_correct += compute_num_correct(model,images,labels)[0]
         print("Class_accuracy: " + '{:.2f}%'.format(
             num_correct / num_total * 100))
+        trainAcc += [float(num_correct / num_total * 100)]
+    return trainAcc
 
 def distillation_loss(teacher_logits: tf.Tensor, student_logits: tf.Tensor,temperature: Union[float, tf.Tensor]):
     """Compute distillation loss.
@@ -185,6 +187,7 @@ def train_and_evaluate_using_KD(studentModel, teacherModel,trainingData, testing
     compute_loss_fn: A function that computes the training loss given the
         images, and labels.
     """
+    trainAcc = []
 
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
@@ -206,6 +209,8 @@ def train_and_evaluate_using_KD(studentModel, teacherModel,trainingData, testing
             num_correct += compute_num_correct(studentModel,images,labels)[0]
         print("Class_accuracy: " + '{:.2f}%'.format(
             num_correct / num_total * 100))
+        trainAcc += [num_correct / num_total * 100]
+    return trainAcc
 
 def testModel(model,testData):
     num_correct = 0
@@ -216,7 +221,6 @@ def testModel(model,testData):
     print("model Testing Accuracy: " + '{:.2f}%'.format(
         (num_correct / num_total) * 100))
     return (num_correct / num_total) * 100
-
 
 def train_and_evaluate(model,trainingData, testingData, trainingLabel, testLabel, nEpochs, learingRate):
     """Perform training and evaluation for the teacher model model.
