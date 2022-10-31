@@ -310,8 +310,8 @@ def getresnetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    for layer in resNetBase.layers[:]:
-        layer.trainable = False
+    # for layer in resNetBase.layers[:]:
+    #     layer.trainable = False
     x = tf.keras.layers.Flatten()(resNetBase.output)
     x = tf.keras.layers.Dense(2)(x)
     restNet = tf.keras.Model(inputs=resNetBase.input, outputs=x)
@@ -324,8 +324,8 @@ def getMobileNetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    for layer in studenModel2.layers[:]:
-        layer.trainable = False
+    # for layer in studenModel2.layers[:]:
+    #     layer.trainable = False
     x = tf.keras.layers.Flatten()(studenModel2.output)
     x = tf.keras.layers.Dense(2)(x)
     mobileNet = tf.keras.Model(inputs=studenModel2.input, outputs=x)
