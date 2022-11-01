@@ -283,14 +283,26 @@ def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingDat
 
 def testTransferedModel(model,testData, testLabel):
     num_correct = 0
+    num_correct_negative = 0
+    num_correct_positive = 0
+    num_negative_total = 0
+    num_positive_total = 0 
     num_total = (32 * len(testData) -1  ) + testData[-1].shape[0]
 
     for i in range(len(testData)):
+        NumNegative, NumPositive, NumCorrectNegative, NumCorrectPositive = sensitivity_specificity(model,testData[i],testLabel[i])
+        #print(NumCorrectNegative, NumCorrectPositive, NumNegative, NumPositive)
+        num_correct_negative += NumCorrectNegative
+        num_correct_positive += NumCorrectPositive
+        num_negative_total += NumNegative
+        num_positive_total += NumPositive
         num_correct += compute_num_correct(model,testData[i],testLabel[i])[0]
     print("model Testing Accuracy: " + '{:.2f}%'.format(
         (num_correct / num_total) * 100))
-    #print(compute_num_correct(model,testData[1],testLabel[1])[0])
-    #sensitivity_specificity(model,testData[1],testLabel[1])
+    print("model Testing Specificity: " + '{:.2f}%'.format(
+        (num_correct_negative / num_negative_total) * 100))
+    print("model Testing Sensitivity: " + '{:.2f}%'.format(
+        (num_correct_positive / num_positive_total) * 100))
     return (num_correct / num_total) * 100
 
 def load_mhist_images(folder):
@@ -380,7 +392,7 @@ def loadMHIST(CSVfile,data):
     return np.asarray(X_train), np.asarray(y_train), np.asarray(X_test), np.asarray(y_test)
 
 
-#def sensitivity_specificity(model, images, labels):
+def sensitivity_specificity(model, images, labels):
     """Compute number of correctly classified images in a batch.
 
     Args:
@@ -391,21 +403,16 @@ def loadMHIST(CSVfile,data):
     Returns:
     Number of correctly classified images.
     """
-#    negative = 0
-#    positive = 0
-#    negnum=0
-#    posnum=0
-#    class_logits = model(images, training=False)
-#    for i in range(len(labels)):
-#        if((labels[i]==(1,0)).all()):
-#            negnum +=1
-#            negative += tf.reduce_sum(tf.cast(tf.math.equal(tf.argmax(class_logits[i], -1), tf.argmax(labels[i], -1)), tf.float32))
-#        if((labels[i]==(0,1)).all()):
-#            posnum +=1
-#            positive += tf.reduce_sum(tf.cast(tf.math.equal(tf.argmax(class_logits[i], -1), tf.argmax(labels[i], -1)), tf.float32))
-#    print(negative)
-#    print(negnum)
-#    print(positive)
-#    print(posnum)
-    
-
+    negative = 0
+    positive = 0
+    negnum=0
+    posnum=0
+    class_logits = model(images, training=False)
+    for i in range(len(labels)):
+        if((labels[i]==(1,0)).all()):
+            negnum +=1
+            negative += tf.reduce_sum(tf.cast(tf.math.equal(tf.argmax(class_logits[i], -1), tf.argmax(labels[i], -1)), tf.float32))
+        if((labels[i]==(0,1)).all()):
+            posnum +=1
+            positive += tf.reduce_sum(tf.cast(tf.math.equal(tf.argmax(class_logits[i], -1), tf.argmax(labels[i], -1)), tf.float32))
+    return negnum, posnum, int(negative), int(positive)
