@@ -10,7 +10,7 @@ from sklearn.metrics import confusion_matrix
 
 builder = tfds.builder('mnist')
 BATCH_SIZE = 256
-NUM_EPOCHS = 2
+NUM_EPOCHS = 12
 NUM_CLASSES = 10 
 
 def preprocess(x):
@@ -103,6 +103,7 @@ def train_evaluate(model,trainingData, testingData):
         images, and labels.
     """
     trainAcc = []
+    testAcc = []
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
@@ -115,16 +116,22 @@ def train_evaluate(model,trainingData, testingData):
             grads = tape.gradient(loss_value, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
-        # Run evaluation.
+        # Train evaluation.
+        num_correct = 0
+        num_total = builder.info.splits['train'].num_examples
+        for images, labels in trainingData:
+            num_correct += compute_num_correct(model,images,labels)[0]
+        trainAcc += [float(num_correct / num_total * 100)]
+
+        # Test evaluation.
         num_correct = 0
         num_total = builder.info.splits['test'].num_examples
         for images, labels in testingData:
-            # your code start from here for step 4
             num_correct += compute_num_correct(model,images,labels)[0]
-        print("Class_accuracy: " + '{:.2f}%'.format(
-            num_correct / num_total * 100))
-        trainAcc += [float(num_correct / num_total * 100)]
-    return trainAcc
+        testAcc += [float(num_correct / num_total * 100)]
+        print('Training Accuracy: {:.2f} and Testing Accuracy:{:.2f}'.format(trainAcc[-1],testAcc[-1]))
+
+    return trainAcc, testAcc
 
 def distillation_loss(teacher_logits: tf.Tensor, student_logits: tf.Tensor,temperature: Union[float, tf.Tensor]):
     """Compute distillation loss.
@@ -189,7 +196,7 @@ def train_and_evaluate_using_KD(studentModel, teacherModel,trainingData, testing
         images, and labels.
     """
     trainAcc = []
-
+    testAcc = []
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
@@ -202,16 +209,22 @@ def train_and_evaluate_using_KD(studentModel, teacherModel,trainingData, testing
             grads = tape.gradient(loss_value, studentModel.trainable_variables)
             optimizer.apply_gradients(zip(grads, studentModel.trainable_variables))
 
-        # Run evaluation.
+        # Train evaluation.
+        num_correct = 0
+        num_total = builder.info.splits['train'].num_examples
+        for images, labels in trainingData:
+            num_correct += compute_num_correct(studentModel,images,labels)[0]
+        trainAcc += [float(num_correct / num_total * 100)]
+
+        # Test evaluation.
         num_correct = 0
         num_total = builder.info.splits['test'].num_examples
         for images, labels in testingData:
-            # your code start from here for step 4
             num_correct += compute_num_correct(studentModel,images,labels)[0]
-        print("Class_accuracy: " + '{:.2f}%'.format(
-            num_correct / num_total * 100))
-        trainAcc += [num_correct / num_total * 100]
-    return trainAcc
+        testAcc += [float(num_correct / num_total * 100)]
+        print('Training Accuracy: {:.2f} and Testing Accuracy:{:.2f}'.format(trainAcc[-1],testAcc[-1]))
+
+    return trainAcc, testAcc
 
 def testModel(model,testData):
     num_correct = 0
@@ -231,6 +244,8 @@ def train_and_evaluate(model,trainingData, testingData, trainingLabel, testLabel
     compute_loss_fn: A function that computes the training loss given the
         images, and labels.
     """
+    trainPerformance = []
+    testPerformance = []
 
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=learingRate)
@@ -244,13 +259,10 @@ def train_and_evaluate(model,trainingData, testingData, trainingLabel, testLabel
             grads = tape.gradient(loss_value, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
-        # Run evaluation.
-        num_correct = 0
-        num_total = (32 * len(testingData) -1  ) + testingData[-1].shape[0]
-        for i in range(len(testingData)):
-            # your code start from here for step 4
-            num_correct += compute_num_correct(model,testingData[i],testLabel[i])[0]
-        print("Class_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
+        trainPerformance += [testModelPerformance(model,trainingData,trainingLabel)]
+        testPerformance  += [testModelPerformance(model,testingData,testLabel)]
+        print('Training Accuracy: {:.2f} % and Testing Accuracy: {:.2f} % Sensitivity: {:.2f}% Specificity: {:.2f} %'.format(trainPerformance[-1][0],testPerformance[-1][0],testPerformance[-1][1],testPerformance[-1][2]))
+    return trainPerformance, testPerformance
 
 def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingData, testingData, trainingLabel, testLabel, alpha, temprature, nEpochs, learingRate):
     """Perform training and evaluation for the teacher model model.
@@ -260,6 +272,8 @@ def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingDat
     compute_loss_fn: A function that computes the training loss given the
         images, and labels.
     """
+    trainPerformance = []
+    testPerformance = []
 
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=learingRate)
@@ -273,37 +287,10 @@ def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingDat
             grads = tape.gradient(loss_value, studentModel.trainable_variables)
             optimizer.apply_gradients(zip(grads, studentModel.trainable_variables))
 
-        # Run evaluation.
-        num_correct = 0
-        num_total = (32 * len(testingData) -1  ) + testingData[-1].shape[0]
-        for i in range(len(testingData)):
-            # your code start from here for step 4
-            num_correct += compute_num_correct(studentModel,testingData[i],testLabel[i])[0]
-        print("Class_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
-
-def testTransferedModel(model,testData, testLabel):
-    num_correct = 0
-    num_correct_negative = 0
-    num_correct_positive = 0
-    num_negative_total = 0
-    num_positive_total = 0 
-    num_total = (32 * len(testData) -1  ) + testData[-1].shape[0]
-
-    for i in range(len(testData)):
-        NumNegative, NumPositive, NumCorrectNegative, NumCorrectPositive = sensitivity_specificity(model,testData[i],testLabel[i])
-        #print(NumCorrectNegative, NumCorrectPositive, NumNegative, NumPositive)
-        num_correct_negative += NumCorrectNegative
-        num_correct_positive += NumCorrectPositive
-        num_negative_total += NumNegative
-        num_positive_total += NumPositive
-        num_correct += compute_num_correct(model,testData[i],testLabel[i])[0]
-    print("model Testing Accuracy: " + '{:.2f}%'.format(
-        (num_correct / num_total) * 100))
-    print("model Testing Specificity: " + '{:.2f}%'.format(
-        (num_correct_negative / num_negative_total) * 100))
-    print("model Testing Sensitivity: " + '{:.2f}%'.format(
-        (num_correct_positive / num_positive_total) * 100))
-    return (num_correct / num_total) * 100
+        trainPerformance += [testModelPerformance(studentModel,trainingData,trainingLabel)]
+        testPerformance  += [testModelPerformance(studentModel,testingData,testLabel)]
+        print('Training Accuracy: {:.2f} % and Testing Accuracy: {:.2f} % Sensitivity: {:.2f}% Specificity: {:.2f} %'.format(trainPerformance[-1][0],testPerformance[-1][0],testPerformance[-1][1],testPerformance[-1][2]))
+    return trainPerformance, testPerformance
 
 def load_mhist_images(folder):
     images = []
@@ -322,8 +309,8 @@ def getresnetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    # for layer in resNetBase.layers[:]:
-    #     layer.trainable = False
+    for layer in resNetBase.layers[:-1]:
+        layer.trainable = False
     x = tf.keras.layers.Flatten()(resNetBase.output)
     x = tf.keras.layers.Dense(2)(x)
     restNet = tf.keras.Model(inputs=resNetBase.input, outputs=x)
@@ -336,8 +323,8 @@ def getMobileNetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    # for layer in studenModel2.layers[:]:
-    #     layer.trainable = False
+    for layer in studenModel2.layers[:-1]:
+        layer.trainable = False
     x = tf.keras.layers.Flatten()(studenModel2.output)
     x = tf.keras.layers.Dense(2)(x)
     mobileNet = tf.keras.Model(inputs=studenModel2.input, outputs=x)
@@ -416,3 +403,26 @@ def sensitivity_specificity(model, images, labels):
             posnum +=1
             positive += tf.reduce_sum(tf.cast(tf.math.equal(tf.argmax(class_logits[i], -1), tf.argmax(labels[i], -1)), tf.float32))
     return negnum, posnum, int(negative), int(positive)
+
+    
+def testModelPerformance(model,data, labels):
+    num_correct = 0
+    num_correct_negative = 0
+    num_correct_positive = 0
+    num_negative_total = 0
+    num_positive_total = 0 
+    num_total = (32 * len(data) -1  ) + data[-1].shape[0]
+
+    for i in range(len(data)):
+        NumNegative, NumPositive, NumCorrectNegative, NumCorrectPositive = sensitivity_specificity(model,data[i],labels[i])
+        #print(NumCorrectNegative, NumCorrectPositive, NumNegative, NumPositive)
+        num_correct_negative += NumCorrectNegative
+        num_correct_positive += NumCorrectPositive
+        num_negative_total += NumNegative
+        num_positive_total += NumPositive
+        num_correct += compute_num_correct(model,data[i],labels[i])[0]
+    acc = float((num_correct / num_total) * 100)
+    spec = float((num_correct_negative / num_negative_total) * 100)
+    sens = float((num_correct_positive / num_positive_total) * 100)
+
+    return acc, sens, spec
