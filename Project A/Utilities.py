@@ -231,7 +231,7 @@ def train_and_evaluate(model,trainingData, testingData, trainingLabel, testLabel
     compute_loss_fn: A function that computes the training loss given the
         images, and labels.
     """
-
+    trainAcc = []
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=learingRate)
 
@@ -246,11 +246,14 @@ def train_and_evaluate(model,trainingData, testingData, trainingLabel, testLabel
 
         # Run evaluation.
         num_correct = 0
-        num_total = (32 * len(testingData) -1  ) + testingData[-1].shape[0]
-        for i in range(len(testingData)):
+        num_total = (32 * len(trainingData) -1  ) + trainingData[-1].shape[0]
+        for i in range(len(trainingData)):
             # your code start from here for step 4
-            num_correct += compute_num_correct(model,testingData[i],testLabel[i])[0]
-        print("Class_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
+            num_correct += compute_num_correct(model,trainingData[i],trainingLabel[i])[0]
+        print("training_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
+        testTransferedModel(model,testingData, testLabel)
+        trainAcc += [float(num_correct / num_total * 100)]
+    return trainAcc
 
 def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingData, testingData, trainingLabel, testLabel, alpha, temprature, nEpochs, learingRate):
     """Perform training and evaluation for the teacher model model.
@@ -260,7 +263,7 @@ def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingDat
     compute_loss_fn: A function that computes the training loss given the
         images, and labels.
     """
-
+    trainAcc = []
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=learingRate)
 
@@ -275,11 +278,14 @@ def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingDat
 
         # Run evaluation.
         num_correct = 0
-        num_total = (32 * len(testingData) -1  ) + testingData[-1].shape[0]
-        for i in range(len(testingData)):
+        num_total = (32 * len(trainingData) -1  ) + trainingData[-1].shape[0]
+        for i in range(len(trainingData)):
             # your code start from here for step 4
-            num_correct += compute_num_correct(studentModel,testingData[i],testLabel[i])[0]
-        print("Class_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
+            num_correct += compute_num_correct(studentModel,trainingData[i],trainingLabel[i])[0]
+        print("training_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
+        testTransferedModel(studentModel,testingData, testLabel)
+        trainAcc += [float(num_correct / num_total * 100)]
+    return trainAcc
 
 def testTransferedModel(model,testData, testLabel):
     num_correct = 0
@@ -291,7 +297,6 @@ def testTransferedModel(model,testData, testLabel):
 
     for i in range(len(testData)):
         NumNegative, NumPositive, NumCorrectNegative, NumCorrectPositive = sensitivity_specificity(model,testData[i],testLabel[i])
-        #print(NumCorrectNegative, NumCorrectPositive, NumNegative, NumPositive)
         num_correct_negative += NumCorrectNegative
         num_correct_positive += NumCorrectPositive
         num_negative_total += NumNegative
@@ -303,7 +308,8 @@ def testTransferedModel(model,testData, testLabel):
         (num_correct_negative / num_negative_total) * 100))
     print("model Testing Sensitivity: " + '{:.2f}%'.format(
         (num_correct_positive / num_positive_total) * 100))
-    return (num_correct / num_total) * 100
+    # return F1 Score
+    return float((num_correct_positive/(num_correct_positive + 0.5*(num_negative_total+num_positive_total-num_correct_negative-num_correct_positive)) )* 100)
 
 def load_mhist_images(folder):
     images = []
@@ -322,8 +328,8 @@ def getresnetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    # for layer in resNetBase.layers[:]:
-    #     layer.trainable = False
+    for layer in resNetBase.layers[:-5]:
+         layer.trainable = False
     x = tf.keras.layers.Flatten()(resNetBase.output)
     x = tf.keras.layers.Dense(2)(x)
     restNet = tf.keras.Model(inputs=resNetBase.input, outputs=x)
@@ -336,12 +342,13 @@ def getMobileNetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    # for layer in studenModel2.layers[:]:
-    #     layer.trainable = False
+    for layer in studenModel2.layers[:]:
+         layer.trainable = False
     x = tf.keras.layers.Flatten()(studenModel2.output)
     x = tf.keras.layers.Dense(2)(x)
     mobileNet = tf.keras.Model(inputs=studenModel2.input, outputs=x)
     return mobileNet
+
 
 def dataBatching(X_train, y_train, X_test, y_test):
     n_batches = 32
@@ -371,24 +378,21 @@ def loadMHIST(CSVfile,data):
     X_test = []
     y_train = []
     y_test = []
-    len1=0
-    len2=0
+
     for i in range(len(data)):
         if Partitions[i] == 'train':
             X_train.append(data[i])
             if (labels[i] == 'SSA'):
                 y_train.append([1,0])
-                len1 = len1+1
             if (labels[i] == 'HP'):
                 y_train.append([0,1])
-                len2 = len2 + 1
         if Partitions[i] == 'test':
             X_test.append(data[i])
             if (labels[i] == 'SSA'):
                 y_test.append([1,0])
             if (labels[i] == 'HP'):
                 y_test.append([0,1])
-    print(len1,len2)
+
     return np.asarray(X_train), np.asarray(y_train), np.asarray(X_test), np.asarray(y_test)
 
 
@@ -401,11 +405,16 @@ def sensitivity_specificity(model, images, labels):
     labels: Tensor representing a batch of labels.
 
     Returns:
-    Number of correctly classified images.
+    Number of positivie and negative images.
+    Number of correctly classified images in both positivie and negative groups.
     """
+    # number of negative classified correctly
     negative = 0
+    # number of positive classified correctly
     positive = 0
+    # total number of negative samples
     negnum=0
+    # total number of positive samples
     posnum=0
     class_logits = model(images, training=False)
     for i in range(len(labels)):
