@@ -244,9 +244,7 @@ def train_and_evaluate(model,trainingData, testingData, trainingLabel, testLabel
     compute_loss_fn: A function that computes the training loss given the
         images, and labels.
     """
-    trainPerformance = []
-    testPerformance = []
-
+    trainAcc = []
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=learingRate)
 
@@ -259,10 +257,16 @@ def train_and_evaluate(model,trainingData, testingData, trainingLabel, testLabel
             grads = tape.gradient(loss_value, model.trainable_variables)
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
-        trainPerformance += [testModelPerformance(model,trainingData,trainingLabel)]
-        testPerformance  += [testModelPerformance(model,testingData,testLabel)]
-        print('Training Accuracy: {:.2f} % and Testing Accuracy: {:.2f} % Sensitivity: {:.2f}% Specificity: {:.2f} %'.format(trainPerformance[-1][0],testPerformance[-1][0],testPerformance[-1][1],testPerformance[-1][2]))
-    return trainPerformance, testPerformance
+        # Run evaluation.
+        num_correct = 0
+        num_total = (32 * len(trainingData) -1  ) + trainingData[-1].shape[0]
+        for i in range(len(trainingData)):
+            # your code start from here for step 4
+            num_correct += compute_num_correct(model,trainingData[i],trainingLabel[i])[0]
+        print("training_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
+        testTransferedModel(model,testingData, testLabel)
+        trainAcc += [float(num_correct / num_total * 100)]
+    return trainAcc
 
 def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingData, testingData, trainingLabel, testLabel, alpha, temprature, nEpochs, learingRate):
     """Perform training and evaluation for the teacher model model.
@@ -272,9 +276,7 @@ def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingDat
     compute_loss_fn: A function that computes the training loss given the
         images, and labels.
     """
-    trainPerformance = []
-    testPerformance = []
-
+    trainAcc = []
     # your code start from here for step 4
     optimizer = tf.keras.optimizers.Adam(learning_rate=learingRate)
 
@@ -287,10 +289,40 @@ def train_and_evaluate_mobileNet_using_KD(studentModel, teacherModel,trainingDat
             grads = tape.gradient(loss_value, studentModel.trainable_variables)
             optimizer.apply_gradients(zip(grads, studentModel.trainable_variables))
 
-        trainPerformance += [testModelPerformance(studentModel,trainingData,trainingLabel)]
-        testPerformance  += [testModelPerformance(studentModel,testingData,testLabel)]
-        print('Training Accuracy: {:.2f} % and Testing Accuracy: {:.2f} % Sensitivity: {:.2f}% Specificity: {:.2f} %'.format(trainPerformance[-1][0],testPerformance[-1][0],testPerformance[-1][1],testPerformance[-1][2]))
-    return trainPerformance, testPerformance
+        # Run evaluation.
+        num_correct = 0
+        num_total = (32 * len(trainingData) -1  ) + trainingData[-1].shape[0]
+        for i in range(len(trainingData)):
+            # your code start from here for step 4
+            num_correct += compute_num_correct(studentModel,trainingData[i],trainingLabel[i])[0]
+        print("training_accuracy: " + '{:.2f}%'.format(num_correct / num_total * 100))
+        testTransferedModel(studentModel,testingData, testLabel)
+        trainAcc += [float(num_correct / num_total * 100)]
+    return trainAcc
+
+def testTransferedModel(model,testData, testLabel):
+    num_correct = 0
+    num_correct_negative = 0
+    num_correct_positive = 0
+    num_negative_total = 0
+    num_positive_total = 0 
+    num_total = (32 * len(testData) -1  ) + testData[-1].shape[0]
+
+    for i in range(len(testData)):
+        NumNegative, NumPositive, NumCorrectNegative, NumCorrectPositive = sensitivity_specificity(model,testData[i],testLabel[i])
+        num_correct_negative += NumCorrectNegative
+        num_correct_positive += NumCorrectPositive
+        num_negative_total += NumNegative
+        num_positive_total += NumPositive
+        num_correct += compute_num_correct(model,testData[i],testLabel[i])[0]
+    print("model Testing Accuracy: " + '{:.2f}%'.format(
+        (num_correct / num_total) * 100))
+    print("model Testing Specificity: " + '{:.2f}%'.format(
+        (num_correct_negative / num_negative_total) * 100))
+    print("model Testing Sensitivity: " + '{:.2f}%'.format(
+        (num_correct_positive / num_positive_total) * 100))
+    # return F1 Score
+    return float((num_correct_positive/(num_correct_positive + 0.5*(num_negative_total+num_positive_total-num_correct_negative-num_correct_positive)) )* 100)
 
 def load_mhist_images(folder):
     images = []
@@ -309,8 +341,8 @@ def getresnetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    for layer in resNetBase.layers[:-1]:
-        layer.trainable = False
+    for layer in resNetBase.layers[:-5]:
+         layer.trainable = False
     x = tf.keras.layers.Flatten()(resNetBase.output)
     x = tf.keras.layers.Dense(2)(x)
     restNet = tf.keras.Model(inputs=resNetBase.input, outputs=x)
@@ -323,12 +355,13 @@ def getMobileNetModel():
         input_shape=(224,224,3),
         pooling=None,
     )
-    for layer in studenModel2.layers[:-1]:
-        layer.trainable = False
+    for layer in studenModel2.layers[:]:
+         layer.trainable = False
     x = tf.keras.layers.Flatten()(studenModel2.output)
     x = tf.keras.layers.Dense(2)(x)
     mobileNet = tf.keras.Model(inputs=studenModel2.input, outputs=x)
     return mobileNet
+
 
 def dataBatching(X_train, y_train, X_test, y_test):
     n_batches = 32
@@ -358,24 +391,21 @@ def loadMHIST(CSVfile,data):
     X_test = []
     y_train = []
     y_test = []
-    len1=0
-    len2=0
+
     for i in range(len(data)):
         if Partitions[i] == 'train':
             X_train.append(data[i])
             if (labels[i] == 'SSA'):
                 y_train.append([1,0])
-                len1 = len1+1
             if (labels[i] == 'HP'):
                 y_train.append([0,1])
-                len2 = len2 + 1
         if Partitions[i] == 'test':
             X_test.append(data[i])
             if (labels[i] == 'SSA'):
                 y_test.append([1,0])
             if (labels[i] == 'HP'):
                 y_test.append([0,1])
-    print(len1,len2)
+
     return np.asarray(X_train), np.asarray(y_train), np.asarray(X_test), np.asarray(y_test)
 
 
@@ -388,11 +418,16 @@ def sensitivity_specificity(model, images, labels):
     labels: Tensor representing a batch of labels.
 
     Returns:
-    Number of correctly classified images.
+    Number of positivie and negative images.
+    Number of correctly classified images in both positivie and negative groups.
     """
+    # number of negative classified correctly
     negative = 0
+    # number of positive classified correctly
     positive = 0
+    # total number of negative samples
     negnum=0
+    # total number of positive samples
     posnum=0
     class_logits = model(images, training=False)
     for i in range(len(labels)):
@@ -403,26 +438,3 @@ def sensitivity_specificity(model, images, labels):
             posnum +=1
             positive += tf.reduce_sum(tf.cast(tf.math.equal(tf.argmax(class_logits[i], -1), tf.argmax(labels[i], -1)), tf.float32))
     return negnum, posnum, int(negative), int(positive)
-
-    
-def testModelPerformance(model,data, labels):
-    num_correct = 0
-    num_correct_negative = 0
-    num_correct_positive = 0
-    num_negative_total = 0
-    num_positive_total = 0 
-    num_total = (32 * len(data) -1  ) + data[-1].shape[0]
-
-    for i in range(len(data)):
-        NumNegative, NumPositive, NumCorrectNegative, NumCorrectPositive = sensitivity_specificity(model,data[i],labels[i])
-        #print(NumCorrectNegative, NumCorrectPositive, NumNegative, NumPositive)
-        num_correct_negative += NumCorrectNegative
-        num_correct_positive += NumCorrectPositive
-        num_negative_total += NumNegative
-        num_positive_total += NumPositive
-        num_correct += compute_num_correct(model,data[i],labels[i])[0]
-    acc = float((num_correct / num_total) * 100)
-    spec = float((num_correct_negative / num_negative_total) * 100)
-    sens = float((num_correct_positive / num_positive_total) * 100)
-
-    return acc, sens, spec
