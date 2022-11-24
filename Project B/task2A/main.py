@@ -7,43 +7,120 @@ import torch
 import torch.nn as nn
 from torchvision.utils import save_image
 from utils import get_loops, get_dataset, get_network, get_eval_pool, evaluate_synset, get_daparam, match_loss, get_time, TensorDataset, epoch, DiffAugment, ParamDiffAug
+import matplotlib.pyplot as plt
+plt.style.use('_mpl-gallery')
 
 
-def main():
+def trainModelUsingOrignalData(args):
+    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
+    training_images = []
+    training_labels = []
+    testing_images = []
+    testing_labels = []
 
-    parser = argparse.ArgumentParser(description='Parameter Processing')
-    parser.add_argument('--dataset', type=str, default='CIFAR10', help='dataset')
-    parser.add_argument('--model', type=str, default='ConvNet', help='model')
-    parser.add_argument('--ipc', type=int, default=50, help='image(s) per class')
-    parser.add_argument('--eval_mode', type=str, default='SS', help='eval_mode') # S: the same to training model, M: multi architectures,  W: net width, D: net depth, A: activation function, P: pooling layer, N: normalization layer,
-    parser.add_argument('--num_exp', type=int, default=5, help='the number of experiments')
-    parser.add_argument('--num_eval', type=int, default=20, help='the number of evaluating randomly initialized models')
-    parser.add_argument('--epoch_eval_train', type=int, default=1000, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
-    parser.add_argument('--Iteration', type=int, default=20000, help='training iterations')
-    parser.add_argument('--lr_img', type=float, default=1.0, help='learning rate for updating synthetic images')
-    parser.add_argument('--lr_net', type=float, default=0.01, help='learning rate for updating network parameters')
-    parser.add_argument('--batch_real', type=int, default=256, help='batch size for real data')
-    parser.add_argument('--batch_train', type=int, default=256, help='batch size for training networks')
-    parser.add_argument('--init', type=str, default='real', help='noise/real: initialize synthetic images from random noise or randomly sampled real images.')
-    parser.add_argument('--dsa_strategy', type=str, default='color_crop_cutout_flip_scale_rotate', help='differentiable Siamese augmentation strategy')
-    parser.add_argument('--data_path', type=str, default='data', help='dataset path')
-    parser.add_argument('--save_path', type=str, default='result', help='path to save results')
-    parser.add_argument('--dis_metric', type=str, default='ours', help='distance metric')
+    training_images = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
+    training_labels = [dst_train[i][1] for i in range(len(dst_train))]
+    training_images = torch.cat(training_images, dim=0).to(args.device)
+    training_labels = torch.tensor(training_labels, dtype=torch.long, device=args.device)
 
-    args = parser.parse_args()
-    args.method = 'DM'
-    args.outer_loop, args.inner_loop = get_loops(args.ipc)
-    args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    args.dsa_param = ParamDiffAug()
-    args.dsa = False if args.dsa_strategy in ['none', 'None'] else True
+    testing_images = [torch.unsqueeze(dst_test[i][0], dim=0) for i in range(len(dst_test))]
+    testing_labels = [dst_test[i][1] for i in range(len(dst_test))]
+    testing_images = torch.cat(testing_images, dim=0).to(args.device)
+    testing_labels = torch.tensor(testing_labels, dtype=torch.long, device=args.device)
 
-    if not os.path.exists(args.data_path):
-        os.mkdir(args.data_path)
+    net = get_network(args.model, channel, num_classes, im_size).to(args.device) # get a random model
+    net.train()
+    net_parameters = list(net.parameters())
+    optimizer_net = torch.optim.SGD(net.parameters(), lr=args.lr_net)  # optimizer_img for synthetic data
+    optimizer_net.zero_grad()
+    criterion = nn.CrossEntropyLoss().to(args.device)
 
-    if not os.path.exists(args.save_path):
-        os.mkdir(args.save_path)
+    training = TensorDataset(training_images, training_labels)
+    testing = TensorDataset(testing_images, testing_labels)
+    trainloader = torch.utils.data.DataLoader(training, batch_size=args.batch_train, shuffle=True, num_workers=0)
+    testingloader = torch.utils.data.DataLoader(testing, batch_size=args.batch_train, shuffle=True, num_workers=0)
+    trainAcc = []
+    testAcc = []
+    for i in range(20):
+        loss, acc  = epoch('train', trainloader, net, optimizer_net, criterion, args, aug = True if args.dsa else False)
+        trainAcc += [acc]
+        loss, acc  = epoch('eval', testingloader, net, optimizer_net, criterion, args, aug = True if args.dsa else False)
+        testAcc += [acc]
+        print('Epoch' , i+1, ' Training Accuracy', trainAcc[-1], ' Testing Accuracy ', testAcc[-1])
 
-    eval_it_pool = np.arange(0, args.Iteration+1, 2000).tolist() if args.eval_mode == 'S' or args.eval_mode == 'SS' else [args.Iteration] # The list of iterations when we evaluate models and record results.
+    f, ax = plt.subplots(figsize=(16, 6))
+    ax.plot(np.asarray(trainAcc), label = "Training Accuracy")
+    ax.plot(np.asarray(testAcc), label = 'Testing Accuracy')
+    ax.set_xlabel('Epoch', fontsize = 16)
+    ax.set_ylabel('Accuracy (%)', fontsize = 16)
+    ax.set_title(args.model + ' Accuracy for '+ args.dataset+ ' dataset', fontsize = 20)
+    ax.legend()
+    f.savefig('result/'+ args.dataset+'-Acc.png', bbox_inches='tight')
+
+def trainModelUsingCondensedData(args):
+    # {'data': data_save, 'accs_all_exps': accs_all_exps, },
+    realCondensedData  = torch.load( os.path.join(args.save_path, 'real' ,'res_%s_%s_%s_%dipc.pt'%(args.method, args.dataset, args.model, args.ipc)))['data']
+    noiseCondensedData = torch.load( os.path.join(args.save_path, 'noise' ,'res_%s_%s_%s_%dipc.pt'%(args.method, args.dataset, args.model, args.ipc)))['data']
+    realTraining = TensorDataset(realCondensedData[0][0], realCondensedData[0][1])
+    noiseTraining = TensorDataset(noiseCondensedData[0][0], noiseCondensedData[0][1])
+
+
+    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
+
+    testing_images = []
+    testing_labels = []
+
+    testing_images = [torch.unsqueeze(dst_test[i][0], dim=0) for i in range(len(dst_test))]
+    testing_labels = [dst_test[i][1] for i in range(len(dst_test))]
+    testing_images = torch.cat(testing_images, dim=0).to(args.device)
+    testing_labels = torch.tensor(testing_labels, dtype=torch.long, device=args.device)
+
+    realNet = get_network(args.model, channel, num_classes, im_size).to(args.device) # get a random model
+    realNet.train()
+    realOptimizer_net = torch.optim.SGD(realNet.parameters(), lr=args.lr_net)  # optimizer_img for synthetic data
+    realOptimizer_net.zero_grad()
+
+    noiseNet = get_network(args.model, channel, num_classes, im_size).to(args.device) # get a random model
+    noiseNet.train()
+    noiseOptimizer_net = torch.optim.SGD(noiseNet.parameters(), lr=args.lr_net)  # optimizer_img for synthetic data
+    noiseOptimizer_net.zero_grad()
+
+
+    criterion = nn.CrossEntropyLoss().to(args.device)
+
+    testing = TensorDataset(testing_images, testing_labels)
+    realTrainloader = torch.utils.data.DataLoader(realTraining, batch_size=args.batch_train, shuffle=True, num_workers=0)
+    noiseTrainloader = torch.utils.data.DataLoader(noiseTraining, batch_size=args.batch_train, shuffle=True, num_workers=0)
+    testingloader = torch.utils.data.DataLoader(testing, batch_size=args.batch_train, shuffle=True, num_workers=0)
+    realTrainAcc = []
+    realTestAcc = []
+    noiseTrainAcc = []
+    noiseTestAcc = []
+    for i in range(20):
+        loss, acc  = epoch('train', realTrainloader, realNet, realOptimizer_net, criterion, args, aug = True if args.dsa else False)
+        realTrainAcc += [acc]
+        loss, acc  = epoch('eval', testingloader, realNet, realOptimizer_net, criterion, args, aug = True if args.dsa else False)
+        realTestAcc += [acc]
+        print('Epoch' , i+1, 'Real Init: Training Accuracy', realTrainAcc[-1], ' Testing Accuracy ', realTestAcc[-1])
+        loss, acc  = epoch('train', noiseTrainloader, noiseNet, noiseOptimizer_net, criterion, args, aug = True if args.dsa else False)
+        noiseTrainAcc += [acc]
+        loss, acc  = epoch('eval', testingloader, noiseNet, noiseOptimizer_net, criterion, args, aug = True if args.dsa else False)
+        noiseTestAcc += [acc]
+        print('Epoch' , i+1, 'Gaussian Init: Training Accuracy', noiseTrainAcc[-1], ' Testing Accuracy ', noiseTestAcc[-1])
+
+    f, ax = plt.subplots(figsize=(16, 6))
+    ax.plot(np.asarray(realTrainAcc), label = "Training Accuracy using Real image initialization")
+    ax.plot(np.asarray(realTestAcc), label = 'Testing Accuracy using Real image initialization')
+    ax.plot(np.asarray(noiseTrainAcc), label = "Training Accuracy using Gaussian noise initialization")
+    ax.plot(np.asarray(noiseTestAcc), label = 'Testing Accuracy using Gaussian noise initialization')
+    ax.set_xlabel('Epoch', fontsize = 16)
+    ax.set_ylabel('Accuracy (%)', fontsize = 16)
+    ax.set_title(args.model + ' Accuracy for Condensed '+ args.dataset+ ' dataset', fontsize = 20)
+    ax.legend()
+    f.savefig('result/'+ args.dataset+'-Condensed-Acc.png', bbox_inches='tight')
+
+def  datasetCondensation(args):
+    eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist() if args.eval_mode == 'S' or args.eval_mode == 'SS' else [args.Iteration] # The list of iterations when we evaluate models and record results.
     print('eval_it_pool: ', eval_it_pool)
     channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
     model_eval_pool = get_eval_pool(args.eval_mode, args.model, args.model)
@@ -209,7 +286,60 @@ def main():
         accs = accs_all_exps[key]
         print('Run %d experiments, train on %s, evaluate %d random %s, mean  = %.2f%%  std = %.2f%%'%(args.num_exp, args.model, len(accs), key, np.mean(accs)*100, np.std(accs)*100))
 
+def main(TrainMNIST = False, TrainCIFAR10 = False, Condense_MNIST = False, Condense_CIFAR10 = False,Train_DM_MNIST = False, Train_DM_CIFAR10 = False, real=True):
 
+    parser = argparse.ArgumentParser(description='Parameter Processing')
+    parser.add_argument('--method', type=str, default='DM', help='DC/DM')
+    parser.add_argument('--dataset', type=str, default='CIFAR10', help='dataset')
+    parser.add_argument('--model', type=str, default='ConvNet', help='model')
+    parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
+    parser.add_argument('--eval_mode', type=str, default='SS', help='eval_mode') # S: the same to training model, M: multi architectures,  W: net width, D: net depth, A: activation function, P: pooling layer, N: normalization layer,
+    parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
+    parser.add_argument('--num_eval', type=int, default=20, help='the number of evaluating randomly initialized models')
+    parser.add_argument('--epoch_eval_train', type=int, default=1000, help='epochs to train a model with synthetic data') # it can be small for speeding up with little performance drop
+    parser.add_argument('--Iteration', type=int, default=100, help='training iterations')
+    parser.add_argument('--lr_img', type=float, default=1.0, help='learning rate for updating synthetic images')
+    parser.add_argument('--lr_net', type=float, default=0.01, help='learning rate for updating network parameters')
+    parser.add_argument('--batch_real', type=int, default=256, help='batch size for real data')
+    parser.add_argument('--batch_train', type=int, default=256, help='batch size for training networks')
+    parser.add_argument('--init', type=str, default='noise', help='noise/real: initialize synthetic images from random noise or randomly sampled real images.')
+    parser.add_argument('--dsa_strategy', type=str, default='color_crop_cutout_flip_scale_rotate', help='differentiable Siamese augmentation strategy')
+    parser.add_argument('--data_path', type=str, default='data', help='dataset path')
+    parser.add_argument('--save_path', type=str, default='result', help='path to save results')
+    parser.add_argument('--dis_metric', type=str, default='ours', help='distance metric')
+
+    args = parser.parse_args()
+    args.outer_loop, args.inner_loop = get_loops(args.ipc)
+    args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    args.dsa_param = ParamDiffAug()
+    args.dsa = False if args.dsa_strategy in ['none', 'None'] else True
+
+    if not os.path.exists(args.data_path):
+        os.mkdir(args.data_path)
+
+    if not os.path.exists(args.save_path):
+        os.mkdir(args.save_path)
+
+
+    if TrainMNIST:
+        args.dataset = 'MNIST'
+        trainModelUsingOrignalData(args)
+    if TrainCIFAR10:
+        args.dataset = 'CIFAR10'
+        trainModelUsingOrignalData(args)
+    if Condense_MNIST:
+        args.dataset = 'MNIST'
+        datasetCondensation(args)
+    if Condense_CIFAR10:
+        args.dataset = 'CIFAR10'
+        datasetCondensation(args)
+    if Train_DM_MNIST:
+        args.dataset = 'MNIST'
+        trainModelUsingCondensedData(args)
+    if Train_DM_CIFAR10:
+        args.dataset = 'CIFAR10'
+        trainModelUsingCondensedData(args)
+    
 
 if __name__ == '__main__':
-    main()
+    main(Train_DM_CIFAR10=True)

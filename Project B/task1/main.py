@@ -118,7 +118,6 @@ def trainModelUsingCondensedData(args):
     ax.legend()
     f.savefig('result/'+ args.dataset+'-Condensed-Acc.png', bbox_inches='tight')
 
-    
 def  datasetCondensation(args):
     eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist() if args.eval_mode == 'S' or args.eval_mode == 'SS' else [args.Iteration] # The list of iterations when we evaluate models and record results.
     print('eval_it_pool: ', eval_it_pool)
