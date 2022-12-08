@@ -434,6 +434,6 @@ def main(TrainMNIST = False, TrainCIFAR10 = False, Condense_MNIST = False, Conde
     if Train_DC_MHIST:
         args.model = 'ResNet18'
         args.dataset = 'MHIST'
-        trainModelUsingCondensedData(args, 100, 'ResNet18') # MLP
+        trainModelUsingCondensedData(args, 20, 'ResNet18') # MLP
 if __name__ == '__main__':
-    main(condenseMHIST=True)
+    main(trainOrginalMHIST=True)
