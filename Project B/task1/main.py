@@ -6,26 +6,44 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torchvision.utils import save_image
-from utils import get_loops, get_dataset, get_network, get_eval_pool, evaluate_synset, get_daparam, match_loss, get_time, TensorDataset, epoch, DiffAugment, ParamDiffAug
+from utils import get_loops, get_dataset, get_network, get_eval_pool, evaluate_synset, get_daparam, match_loss, get_time, TensorDataset, epoch, DiffAugment, ParamDiffAug, getMHIST
 import matplotlib.pyplot as plt
 plt.style.use('_mpl-gallery')
 
 def trainModelUsingOrignalData(args):
-    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
-    training_images = []
-    training_labels = []
-    testing_images = []
-    testing_labels = []
+    if args.dataset == 'MHIST':
+        X_train, y_train, X_test, y_test, channel, num_classes, im_size, mean, std = getMHIST()
+        training_images = torch.from_numpy(X_train).to(args.device)
+        training_labels = torch.from_numpy(y_train).to(args.device)
+        testing_images = torch.from_numpy(X_test).to(args.device)
+        testing_labels = torch.from_numpy(y_test).to(args.device)
+        del X_train
+        del y_train
+        del X_test
+        del y_test
 
-    training_images = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
-    training_labels = [dst_train[i][1] for i in range(len(dst_train))]
-    training_images = torch.cat(training_images, dim=0).to(args.device)
-    training_labels = torch.tensor(training_labels, dtype=torch.long, device=args.device)
+    else:
+        channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
+        training_images = []
+        training_labels = []
+        testing_images = []
+        testing_labels = []
 
-    testing_images = [torch.unsqueeze(dst_test[i][0], dim=0) for i in range(len(dst_test))]
-    testing_labels = [dst_test[i][1] for i in range(len(dst_test))]
-    testing_images = torch.cat(testing_images, dim=0).to(args.device)
-    testing_labels = torch.tensor(testing_labels, dtype=torch.long, device=args.device)
+        training_images = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
+        training_labels = [dst_train[i][1] for i in range(len(dst_train))]
+
+        testing_images = [torch.unsqueeze(dst_test[i][0], dim=0) for i in range(len(dst_test))]
+        testing_labels = [dst_test[i][1] for i in range(len(dst_test))]
+
+        training_images = torch.cat(training_images, dim=0).to(args.device)
+        training_labels = torch.tensor(training_labels, dtype=torch.long, device=args.device)
+        testing_images = torch.cat(testing_images, dim=0).to(args.device)
+        testing_labels = torch.tensor(testing_labels, dtype=torch.long, device=args.device)
+
+    training = TensorDataset(training_images, training_labels)
+    testing = TensorDataset(testing_images, testing_labels)
+    trainloader = torch.utils.data.DataLoader(training, batch_size=args.batch_train, shuffle=True, num_workers=0)
+    testingloader = torch.utils.data.DataLoader(testing, batch_size=args.batch_train, shuffle=True, num_workers=0)
 
     net = get_network(args.model, channel, num_classes, im_size).to(args.device) # get a random model
     net.train()
@@ -34,10 +52,6 @@ def trainModelUsingOrignalData(args):
     optimizer_net.zero_grad()
     criterion = nn.CrossEntropyLoss().to(args.device)
 
-    training = TensorDataset(training_images, training_labels)
-    testing = TensorDataset(testing_images, testing_labels)
-    trainloader = torch.utils.data.DataLoader(training, batch_size=args.batch_train, shuffle=True, num_workers=0)
-    testingloader = torch.utils.data.DataLoader(testing, batch_size=args.batch_train, shuffle=True, num_workers=0)
     trainAcc = []
     testAcc = []
     for i in range(20):
@@ -47,39 +61,46 @@ def trainModelUsingOrignalData(args):
         testAcc += [acc]
         print('Epoch' , i+1, ' Training Accuracy', trainAcc[-1], ' Testing Accuracy ', testAcc[-1])
 
-    f, ax = plt.subplots(figsize=(16, 6))
+    f, ax = plt.subplots(figsize=(8, 4))
     ax.plot(np.asarray(trainAcc), label = "Training Accuracy")
     ax.plot(np.asarray(testAcc), label = 'Testing Accuracy')
     ax.set_xlabel('Epoch', fontsize = 16)
     ax.set_ylabel('Accuracy (%)', fontsize = 16)
-    ax.set_title(args.model + ' Accuracy for '+ args.dataset+ ' dataset', fontsize = 20)
+    # ax.set_title(args.model + ' Accuracy for '+ args.dataset+ ' dataset', fontsize = 20)
     ax.legend()
     f.savefig('result/'+ args.dataset+'-Acc.png', bbox_inches='tight')
 
-def trainModelUsingCondensedData(args):
+def trainModelUsingCondensedData(args, nEpochs, model):
     # {'data': data_save, 'accs_all_exps': accs_all_exps, },
     realCondensedData  = torch.load( os.path.join(args.save_path, 'real' ,'res_%s_%s_%s_%dipc.pt'%(args.method, args.dataset, args.model, args.ipc)))['data']
     noiseCondensedData = torch.load( os.path.join(args.save_path, 'noise' ,'res_%s_%s_%s_%dipc.pt'%(args.method, args.dataset, args.model, args.ipc)))['data']
     realTraining = TensorDataset(realCondensedData[0][0], realCondensedData[0][1])
     noiseTraining = TensorDataset(noiseCondensedData[0][0], noiseCondensedData[0][1])
 
+    if args.dataset == 'MHIST':
+        X_train, y_train, X_test, y_test, channel, num_classes, im_size, mean, std = getMHIST()
+        testing_images = torch.from_numpy(X_test).to(args.device)
+        testing_labels = torch.from_numpy(y_test).to(args.device)
+        del X_train
+        del y_train
+        del X_test
+        del y_test
 
-    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
+    else:
+        channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
+        testing_images = []
+        testing_labels = []
+        training_images = torch.cat(training_images, dim=0).to(args.device)
+        training_labels = torch.tensor(training_labels, dtype=torch.long, device=args.device)
+        testing_images = torch.cat(testing_images, dim=0).to(args.device)
+        testing_labels = torch.tensor(testing_labels, dtype=torch.long, device=args.device)
 
-    testing_images = []
-    testing_labels = []
-
-    testing_images = [torch.unsqueeze(dst_test[i][0], dim=0) for i in range(len(dst_test))]
-    testing_labels = [dst_test[i][1] for i in range(len(dst_test))]
-    testing_images = torch.cat(testing_images, dim=0).to(args.device)
-    testing_labels = torch.tensor(testing_labels, dtype=torch.long, device=args.device)
-
-    realNet = get_network(args.model, channel, num_classes, im_size).to(args.device) # get a random model
+    realNet = get_network(model, channel, num_classes, im_size).to(args.device) # get a random model
     realNet.train()
     realOptimizer_net = torch.optim.SGD(realNet.parameters(), lr=args.lr_net)  # optimizer_img for synthetic data
     realOptimizer_net.zero_grad()
 
-    noiseNet = get_network(args.model, channel, num_classes, im_size).to(args.device) # get a random model
+    noiseNet = get_network(model, channel, num_classes, im_size).to(args.device) # get a random model
     noiseNet.train()
     noiseOptimizer_net = torch.optim.SGD(noiseNet.parameters(), lr=args.lr_net)  # optimizer_img for synthetic data
     noiseOptimizer_net.zero_grad()
@@ -95,7 +116,7 @@ def trainModelUsingCondensedData(args):
     realTestAcc = []
     noiseTrainAcc = []
     noiseTestAcc = []
-    for i in range(20):
+    for i in range(nEpochs):
         loss, acc  = epoch('train', realTrainloader, realNet, realOptimizer_net, criterion, args, aug = True if args.dsa else False)
         realTrainAcc += [acc]
         loss, acc  = epoch('eval', testingloader, realNet, realOptimizer_net, criterion, args, aug = True if args.dsa else False)
@@ -107,23 +128,28 @@ def trainModelUsingCondensedData(args):
         noiseTestAcc += [acc]
         print('Epoch' , i+1, 'Gaussian Init: Training Accuracy', noiseTrainAcc[-1], ' Testing Accuracy ', noiseTestAcc[-1])
 
-    f, ax = plt.subplots(figsize=(16, 6))
+    f, ax = plt.subplots(figsize=(8, 4))
     ax.plot(np.asarray(realTrainAcc), label = "Training Accuracy using Real image initialization")
     ax.plot(np.asarray(realTestAcc), label = 'Testing Accuracy using Real image initialization')
-    ax.plot(np.asarray(noiseTrainAcc), label = "Training Accuracy using Gaussian noise initialization")
-    ax.plot(np.asarray(noiseTestAcc), label = 'Testing Accuracy using Gaussian noise initialization')
+    ax.plot(np.asarray(noiseTrainAcc),'--', label = "Training Accuracy using Gaussian noise initialization")
+    ax.plot(np.asarray(noiseTestAcc),'--', label = 'Testing Accuracy using Gaussian noise initialization')
     ax.set_xlabel('Epoch', fontsize = 16)
     ax.set_ylabel('Accuracy (%)', fontsize = 16)
-    ax.set_title(args.model + ' Accuracy for Condensed '+ args.dataset+ ' dataset', fontsize = 20)
+    # ax.set_title(args.model + ' Accuracy for Condensed '+ args.dataset+ ' dataset', fontsize = 20)
     ax.legend()
-    f.savefig('result/'+ args.dataset+'-Condensed-Acc.png', bbox_inches='tight')
+    f.savefig('result/'+ args.dataset+'-'+model+'-Condensed-Acc.png', bbox_inches='tight')
+    return realTrainAcc, realTestAcc, noiseTrainAcc, noiseTestAcc
 
 def  datasetCondensation(args):
-    eval_it_pool = np.arange(0, args.Iteration+1, 500).tolist() if args.eval_mode == 'S' or args.eval_mode == 'SS' else [args.Iteration] # The list of iterations when we evaluate models and record results.
+    eval_it_pool = np.arange(0, args.Iteration+1, 100).tolist() if args.eval_mode == 'S' or args.eval_mode == 'SS' else [args.Iteration] # The list of iterations when we evaluate models and record results.
     print('eval_it_pool: ', eval_it_pool)
-    channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
     model_eval_pool = get_eval_pool(args.eval_mode, args.model, args.model)
 
+    if args.dataset == 'MHIST':
+        X_train, y_train, X_test, y_test, channel, num_classes, im_size, mean, std = getMHIST()
+
+    else:
+        channel, im_size, num_classes, class_names, mean, std, dst_train, dst_test, testloader = get_dataset(args.dataset, args.data_path)
 
     accs_all_exps = dict() # record performances of all experiments
     for key in model_eval_pool:
@@ -132,173 +158,186 @@ def  datasetCondensation(args):
     data_save = []
 
 
-    for exp in range(args.num_exp):
-        print('\n================== Exp %d ==================\n '%exp)
-        print('Hyper-parameters: \n', args.__dict__)
-        print('Evaluation model pool: ', model_eval_pool)
 
-        ''' organize the real dataset '''
-        images_all = []
-        labels_all = []
-        indices_class = [[] for c in range(num_classes)]
+    print('Hyper-parameters: \n', args.__dict__)
+    print('Evaluation model pool: ', model_eval_pool)
 
+    ''' organize the real dataset '''
+    images_all = []
+    labels_all = []
+    indices_class = [[] for c in range(num_classes)]
+
+    if args.dataset == 'MHIST':
+        images_all = torch.from_numpy(X_train).float().to(args.device)
+        labels_all = torch.from_numpy(y_train).to(args.device)
+        testing_images = torch.from_numpy(X_test)#.to(args.device)
+        testing_labels = torch.from_numpy(y_test)#.to(args.device)
+        testing = TensorDataset(testing_images, testing_labels)
+        testloader = torch.utils.data.DataLoader(testing, batch_size=args.batch_train, shuffle=True, num_workers=0)
+
+        del X_train
+        del y_train
+        del X_test
+        del y_test
+
+    else:
         images_all = [torch.unsqueeze(dst_train[i][0], dim=0) for i in range(len(dst_train))]
         labels_all = [dst_train[i][1] for i in range(len(dst_train))]
-        for i, lab in enumerate(labels_all):
-            indices_class[lab].append(i)
         images_all = torch.cat(images_all, dim=0).to(args.device)
         labels_all = torch.tensor(labels_all, dtype=torch.long, device=args.device)
+    for i, lab in enumerate(labels_all):
+        indices_class[lab].append(i)
 
+    for c in range(num_classes):
+        print('class c = %d: %d real images'%(c, len(indices_class[c])))
+
+    def get_images(c, n): # get random n images from class c
+        idx_shuffle = np.random.permutation(indices_class[c])[:n]
+        return images_all[idx_shuffle]
+
+    for ch in range(channel):
+        print('real images channel %d, mean = %.4f, std = %.4f'%(ch, torch.mean(images_all[:, ch]), torch.std(images_all[:, ch])))
+
+
+    ''' initialize the synthetic data '''
+    image_syn = torch.randn(size=(num_classes*args.ipc, channel, im_size[0], im_size[1]), dtype=torch.float, requires_grad=True, device=args.device)
+    label_syn = torch.tensor([np.ones(args.ipc)*i for i in range(num_classes)], dtype=torch.long, requires_grad=False, device=args.device).view(-1) # [0,0,0, 1,1,1, ..., 9,9,9]
+
+    if args.init == 'real':
+        print('initialize synthetic data from random real images')
         for c in range(num_classes):
-            print('class c = %d: %d real images'%(c, len(indices_class[c])))
-
-        def get_images(c, n): # get random n images from class c
-            idx_shuffle = np.random.permutation(indices_class[c])[:n]
-            return images_all[idx_shuffle]
-
-        for ch in range(channel):
-            print('real images channel %d, mean = %.4f, std = %.4f'%(ch, torch.mean(images_all[:, ch]), torch.std(images_all[:, ch])))
+            image_syn.data[c*args.ipc:(c+1)*args.ipc] = get_images(c, args.ipc).detach().data
+    else:
+        print('initialize synthetic data from random noise')
 
 
-        ''' initialize the synthetic data '''
-        image_syn = torch.randn(size=(num_classes*args.ipc, channel, im_size[0], im_size[1]), dtype=torch.float, requires_grad=True, device=args.device)
-        label_syn = torch.tensor([np.ones(args.ipc)*i for i in range(num_classes)], dtype=torch.long, requires_grad=False, device=args.device).view(-1) # [0,0,0, 1,1,1, ..., 9,9,9]
+    ''' training '''
+    optimizer_img = torch.optim.SGD([image_syn, ], lr=args.lr_img, momentum=0.5) # optimizer_img for synthetic data
+    optimizer_img.zero_grad()
+    criterion = nn.CrossEntropyLoss().to(args.device)
+    print('%s training begins'%get_time())
 
-        if args.init == 'real':
-            print('initialize synthetic data from random real images')
-            for c in range(num_classes):
-                image_syn.data[c*args.ipc:(c+1)*args.ipc] = get_images(c, args.ipc).detach().data
-        else:
-            print('initialize synthetic data from random noise')
+    for it in range(args.Iteration+1):
 
+        ''' Evaluate synthetic data '''
+        if it in eval_it_pool:
+            for model_eval in model_eval_pool:
+                print('-------------------------\nEvaluation\nmodel_train = %s, model_eval = %s, iteration = %d'%(args.model, model_eval, it))
+                if args.dsa:
+                    args.epoch_eval_train = 1000
+                    args.dc_aug_param = None
+                    print('DSA augmentation strategy: \n', args.dsa_strategy)
+                    print('DSA augmentation parameters: \n', args.dsa_param.__dict__)
+                else:
+                    args.dc_aug_param = get_daparam(args.dataset, args.model, model_eval, args.ipc) # This augmentation parameter set is only for DC method. It will be muted when args.dsa is True.
+                    print('DC augmentation parameters: \n', args.dc_aug_param)
 
-        ''' training '''
-        optimizer_img = torch.optim.SGD([image_syn, ], lr=args.lr_img, momentum=0.5) # optimizer_img for synthetic data
-        optimizer_img.zero_grad()
-        criterion = nn.CrossEntropyLoss().to(args.device)
-        print('%s training begins'%get_time())
+                if args.dsa or args.dc_aug_param['strategy'] != 'none':
+                    args.epoch_eval_train = 1000  # Training with data augmentation needs more epochs.
+                else:
+                    args.epoch_eval_train = 300
 
-        for it in range(args.Iteration+1):
+                accs = []
+                for it_eval in range(args.num_eval):
+                    net_eval = get_network(model_eval, channel, num_classes, im_size).to(args.device) # get a random model
+                    image_syn_eval, label_syn_eval = copy.deepcopy(image_syn.detach()), copy.deepcopy(label_syn.detach()) # avoid any unaware modification
+                    _, acc_train, acc_test = evaluate_synset(it_eval, net_eval, image_syn_eval, label_syn_eval, testloader, args)
+                    accs.append(acc_test)
+                print('Evaluate %d random %s, mean = %.4f std = %.4f\n-------------------------'%(len(accs), model_eval, np.mean(accs), np.std(accs)))
 
-            ''' Evaluate synthetic data '''
-            if it in eval_it_pool:
-                for model_eval in model_eval_pool:
-                    print('-------------------------\nEvaluation\nmodel_train = %s, model_eval = %s, iteration = %d'%(args.model, model_eval, it))
-                    if args.dsa:
-                        args.epoch_eval_train = 1000
-                        args.dc_aug_param = None
-                        print('DSA augmentation strategy: \n', args.dsa_strategy)
-                        print('DSA augmentation parameters: \n', args.dsa_param.__dict__)
-                    else:
-                        args.dc_aug_param = get_daparam(args.dataset, args.model, model_eval, args.ipc) # This augmentation parameter set is only for DC method. It will be muted when args.dsa is True.
-                        print('DC augmentation parameters: \n', args.dc_aug_param)
+                if it == args.Iteration: # record the final results
+                    accs_all_exps[model_eval] += accs
 
-                    if args.dsa or args.dc_aug_param['strategy'] != 'none':
-                        args.epoch_eval_train = 1000  # Training with data augmentation needs more epochs.
-                    else:
-                        args.epoch_eval_train = 300
-
-                    accs = []
-                    for it_eval in range(args.num_eval):
-                        net_eval = get_network(model_eval, channel, num_classes, im_size).to(args.device) # get a random model
-                        image_syn_eval, label_syn_eval = copy.deepcopy(image_syn.detach()), copy.deepcopy(label_syn.detach()) # avoid any unaware modification
-                        _, acc_train, acc_test = evaluate_synset(it_eval, net_eval, image_syn_eval, label_syn_eval, testloader, args)
-                        accs.append(acc_test)
-                    print('Evaluate %d random %s, mean = %.4f std = %.4f\n-------------------------'%(len(accs), model_eval, np.mean(accs), np.std(accs)))
-
-                    if it == args.Iteration: # record the final results
-                        accs_all_exps[model_eval] += accs
-
-                ''' visualize and save '''
-                save_name = os.path.join(args.save_path, 'vis_%s_%s_%s_%dipc_exp%d_iter%d.png'%(args.method, args.dataset, args.model, args.ipc, exp, it))
-                image_syn_vis = copy.deepcopy(image_syn.detach().cpu())
-                for ch in range(channel):
-                    image_syn_vis[:, ch] = image_syn_vis[:, ch]  * std[ch] + mean[ch]
-                image_syn_vis[image_syn_vis<0] = 0.0
-                image_syn_vis[image_syn_vis>1] = 1.0
-                save_image(image_syn_vis, save_name, nrow=args.ipc) # Trying normalize = True/False may get better visual effects.
+            ''' visualize and save '''
+            save_name = os.path.join(args.save_path, args.init, 'vis_%s_%s_%s_%dipc_exp%d_iter%d.png'%(args.method, args.dataset, args.model, args.ipc, 0, it))
+            image_syn_vis = copy.deepcopy(image_syn.detach().cpu())
+            for ch in range(channel):
+                image_syn_vis[:, ch] = image_syn_vis[:, ch]  * std[ch] + mean[ch]
+            image_syn_vis[image_syn_vis<0] = 0.0
+            image_syn_vis[image_syn_vis>1] = 1.0
+            save_image(image_syn_vis, save_name, nrow=args.ipc) # Trying normalize = True/False may get better visual effects.
 
 
-            ''' Train synthetic data '''
-            net = get_network(args.model, channel, num_classes, im_size).to(args.device) # get a random model
-            net.train()
-            net_parameters = list(net.parameters())
-            optimizer_net = torch.optim.SGD(net.parameters(), lr=args.lr_net)  # optimizer_img for synthetic data
-            optimizer_net.zero_grad()
-            loss_avg = 0
-            args.dc_aug_param = None  # Mute the DC augmentation when learning synthetic data (in inner-loop epoch function) in oder to be consistent with DC paper.
+        ''' Train synthetic data '''
+        net = get_network(args.model, channel, num_classes, im_size).to(args.device) # get a random model
+        net.train()
+        net_parameters = list(net.parameters())
+        optimizer_net = torch.optim.SGD(net.parameters(), lr=args.lr_net)  # optimizer_img for synthetic data
+        optimizer_net.zero_grad()
+        loss_avg = 0
+        args.dc_aug_param = None  # Mute the DC augmentation when learning synthetic data (in inner-loop epoch function) in oder to be consistent with DC paper.
 
 
-            for ol in range(args.outer_loop):
+        for ol in range(args.outer_loop):
 
-                ''' freeze the running mu and sigma for BatchNorm layers '''
-                # Synthetic data batch, e.g. only 1 image/batch, is too small to obtain stable mu and sigma.
-                # So, we calculate and freeze mu and sigma for BatchNorm layer with real data batch ahead.
-                # This would make the training with BatchNorm layers easier.
+            ''' freeze the running mu and sigma for BatchNorm layers '''
+            # Synthetic data batch, e.g. only 1 image/batch, is too small to obtain stable mu and sigma.
+            # So, we calculate and freeze mu and sigma for BatchNorm layer with real data batch ahead.
+            # This would make the training with BatchNorm layers easier.
 
-                BN_flag = False
-                BNSizePC = 16  # for batch normalization
+            BN_flag = False
+            BNSizePC = 16  # for batch normalization
+            for module in net.modules():
+                if 'BatchNorm' in module._get_name(): #BatchNorm
+                    BN_flag = True
+            if BN_flag:
+                img_real = torch.cat([get_images(c, BNSizePC) for c in range(num_classes)], dim=0)
+                net.train() # for updating the mu, sigma of BatchNorm
+                output_real = net(img_real) # get running mu, sigma
                 for module in net.modules():
-                    if 'BatchNorm' in module._get_name(): #BatchNorm
-                        BN_flag = True
-                if BN_flag:
-                    img_real = torch.cat([get_images(c, BNSizePC) for c in range(num_classes)], dim=0)
-                    net.train() # for updating the mu, sigma of BatchNorm
-                    output_real = net(img_real) # get running mu, sigma
-                    for module in net.modules():
-                        if 'BatchNorm' in module._get_name():  #BatchNorm
-                            module.eval() # fix mu and sigma of every BatchNorm layer
+                    if 'BatchNorm' in module._get_name():  #BatchNorm
+                        module.eval() # fix mu and sigma of every BatchNorm layer
 
 
-                ''' update synthetic data '''
-                loss = torch.tensor(0.0).to(args.device)
-                for c in range(num_classes):
-                    img_real = get_images(c, args.batch_real)
-                    lab_real = torch.ones((img_real.shape[0],), device=args.device, dtype=torch.long) * c
-                    img_syn = image_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, channel, im_size[0], im_size[1]))
-                    lab_syn = torch.ones((args.ipc,), device=args.device, dtype=torch.long) * c
+            ''' update synthetic data '''
+            loss = torch.tensor(0.0).to(args.device)
+            for c in range(num_classes):
+                img_real = get_images(c, args.batch_real)
+                lab_real = torch.ones((img_real.shape[0],), device=args.device, dtype=torch.long) * c
+                img_syn = image_syn[c*args.ipc:(c+1)*args.ipc].reshape((args.ipc, channel, im_size[0], im_size[1]))
+                lab_syn = torch.ones((args.ipc,), device=args.device, dtype=torch.long) * c
 
-                    if args.dsa:
-                        seed = int(time.time() * 1000) % 100000
-                        img_real = DiffAugment(img_real, args.dsa_strategy, seed=seed, param=args.dsa_param)
-                        img_syn = DiffAugment(img_syn, args.dsa_strategy, seed=seed, param=args.dsa_param)
+                if args.dsa:
+                    seed = int(time.time() * 1000) % 100000
+                    img_real = DiffAugment(img_real, args.dsa_strategy, seed=seed, param=args.dsa_param)
+                    img_syn = DiffAugment(img_syn, args.dsa_strategy, seed=seed, param=args.dsa_param)
 
-                    output_real = net(img_real)
-                    loss_real = criterion(output_real, lab_real)
-                    gw_real = torch.autograd.grad(loss_real, net_parameters)
-                    gw_real = list((_.detach().clone() for _ in gw_real))
+                output_real = net(img_real)
+                loss_real = criterion(output_real, lab_real)
+                gw_real = torch.autograd.grad(loss_real, net_parameters)
+                gw_real = list((_.detach().clone() for _ in gw_real))
 
-                    output_syn = net(img_syn)
-                    loss_syn = criterion(output_syn, lab_syn)
-                    gw_syn = torch.autograd.grad(loss_syn, net_parameters, create_graph=True)
+                output_syn = net(img_syn)
+                loss_syn = criterion(output_syn, lab_syn)
+                gw_syn = torch.autograd.grad(loss_syn, net_parameters, create_graph=True)
 
-                    loss += match_loss(gw_syn, gw_real, args)
+                loss += match_loss(gw_syn, gw_real, args)
 
-                optimizer_img.zero_grad()
-                loss.backward()
-                optimizer_img.step()
-                loss_avg += loss.item()
+            optimizer_img.zero_grad()
+            loss.backward()
+            optimizer_img.step()
+            loss_avg += loss.item()
 
-                if ol == args.outer_loop - 1:
-                    break
-
-
-                ''' update network '''
-                image_syn_train, label_syn_train = copy.deepcopy(image_syn.detach()), copy.deepcopy(label_syn.detach())  # avoid any unaware modification
-                dst_syn_train = TensorDataset(image_syn_train, label_syn_train)
-                trainloader = torch.utils.data.DataLoader(dst_syn_train, batch_size=args.batch_train, shuffle=True, num_workers=0)
-                for il in range(args.inner_loop):
-                    epoch('train', trainloader, net, optimizer_net, criterion, args, aug = True if args.dsa else False)
+            if ol == args.outer_loop - 1:
+                break
 
 
-            loss_avg /= (num_classes*args.outer_loop)
+            ''' update network '''
+            image_syn_train, label_syn_train = copy.deepcopy(image_syn.detach()), copy.deepcopy(label_syn.detach())  # avoid any unaware modification
+            dst_syn_train = TensorDataset(image_syn_train, label_syn_train)
+            trainloader = torch.utils.data.DataLoader(dst_syn_train, batch_size=args.batch_train, shuffle=True, num_workers=0)
+            for il in range(args.inner_loop):
+                epoch('train', trainloader, net, optimizer_net, criterion, args, aug = True if args.dsa else False)
 
-            if it%10 == 0:
-                print('%s iter = %04d, loss = %.4f' % (get_time(), it, loss_avg))
 
-            if it == args.Iteration: # only record the final results
-                data_save.append([copy.deepcopy(image_syn.detach().cpu()), copy.deepcopy(label_syn.detach().cpu())])
-                torch.save({'data': data_save, 'accs_all_exps': accs_all_exps, }, os.path.join(args.save_path, 'res_%s_%s_%s_%dipc.pt'%(args.method, args.dataset, args.model, args.ipc)))
+        loss_avg /= (num_classes*args.outer_loop)
+
+        if it%10 == 0:
+            print('%s iter = %04d, loss = %.4f' % (get_time(), it, loss_avg))
+
+        if it == args.Iteration: # only record the final results
+            data_save.append([copy.deepcopy(image_syn.detach().cpu()), copy.deepcopy(label_syn.detach().cpu())])
+            torch.save({'data': data_save, 'accs_all_exps': accs_all_exps, }, os.path.join(args.save_path, args.init, 'res_%s_%s_%s_%dipc.pt'%(args.method, args.dataset, args.model, args.ipc)))
 
 
     print('\n==================== Final Results ====================\n')
@@ -306,7 +345,31 @@ def  datasetCondensation(args):
         accs = accs_all_exps[key]
         print('Run %d experiments, train on %s, evaluate %d random %s, mean  = %.2f%%  std = %.2f%%'%(args.num_exp, args.model, len(accs), key, np.mean(accs)*100, np.std(accs)*100))
 
-def main(TrainMNIST = False, TrainCIFAR10 = False, Condense_MNIST = False, Condense_CIFAR10 = False,Train_DC_MNIST = False, Train_DC_CIFAR10 = False, real=True):
+def neuralArchitectureSearch(args, dataset, nepochs):
+    args.dataset = dataset
+    nets= ['ConvNet', 'MLP', 'ResNet18', 'AlexNet', 'LeNet', 'AlexNetBN']
+    results = []
+    for  n in nets:
+        print("Training "+n+" for "+dataset)
+        results += [trainModelUsingCondensedData(args, nepochs, n) ]
+
+    f, ax = plt.subplots(figsize=(14, 4))
+    for idx, res in enumerate(results):
+        ax.plot(np.asarray(res[1]), label = nets[idx])
+    ax.set_xlabel('Epoch', fontsize = 16)
+    ax.set_ylabel('Accuracy (%)', fontsize = 16)
+    ax.legend()
+    f.savefig('result/'+ args.dataset+'-arch-search-real.png', bbox_inches='tight')
+    f, ax = plt.subplots(figsize=(14, 4))
+    for idx, res in enumerate(results):
+        ax.plot(np.asarray(res[3]), label = nets[idx])
+    ax.set_xlabel('Epoch', fontsize = 16)
+    ax.set_ylabel('Accuracy (%)', fontsize = 16)
+    ax.legend()
+    f.savefig('result/'+ args.dataset+'-arch-search-noise.png', bbox_inches='tight')
+
+def main(TrainMNIST = False, TrainCIFAR10 = False, Condense_MNIST = False, Condense_CIFAR10 = False, Train_DC_MNIST = False, 
+        Train_DC_CIFAR10 = False,  NeuralArchitectureSearch=False, trainOrginalMHIST=False, condenseMHIST=False, Train_DC_MHIST=False):
 
     parser = argparse.ArgumentParser(description='Parameter Processing')
     parser.add_argument('--method', type=str, default='DC', help='DC/DSA')
@@ -315,13 +378,13 @@ def main(TrainMNIST = False, TrainCIFAR10 = False, Condense_MNIST = False, Conde
     parser.add_argument('--ipc', type=int, default=10, help='image(s) per class')
     parser.add_argument('--eval_mode', type=str, default='S', help='eval_mode') # S: the same to training model, M: multi architectures,  W: net width, D: net depth, A: activation function, P: pooling layer, N: normalization layer,
     parser.add_argument('--num_exp', type=int, default=1, help='the number of experiments')
-    parser.add_argument('--num_eval', type=int, default=20, help='the number of evaluating randomly initialized models')
+    parser.add_argument('--num_eval', type=int, default=10, help='the number of evaluating randomly initialized models')
     parser.add_argument('--epoch_eval_train', type=int, default=300, help='epochs to train a model with synthetic data')
     parser.add_argument('--Iteration', type=int, default=100, help='training iterations')
     parser.add_argument('--lr_img', type=float, default=0.1, help='learning rate for updating synthetic images')
     parser.add_argument('--lr_net', type=float, default=0.01, help='learning rate for updating network parameters')
     parser.add_argument('--batch_real', type=int, default=256, help='batch size for real data')
-    parser.add_argument('--batch_train', type=int, default=256, help='batch size for training networks')
+    parser.add_argument('--batch_train', type=int, default=32, help='batch size for training networks')
     parser.add_argument('--init', type=str, default='real', help='noise/real: initialize synthetic images from random noise or randomly sampled real images.')
     parser.add_argument('--dsa_strategy', type=str, default='None', help='differentiable Siamese augmentation strategy')
     parser.add_argument('--data_path', type=str, default='data', help='dataset path')
@@ -354,11 +417,23 @@ def main(TrainMNIST = False, TrainCIFAR10 = False, Condense_MNIST = False, Conde
         datasetCondensation(args)
     if Train_DC_MNIST:
         args.dataset = 'MNIST'
-        trainModelUsingCondensedData(args)
+        trainModelUsingCondensedData(args, 200, 'MLP') # MLP
     if Train_DC_CIFAR10:
         args.dataset = 'CIFAR10'
-        trainModelUsingCondensedData(args)
-    
-
+        trainModelUsingCondensedData(args, 200, 'MLP') # MLP
+    if NeuralArchitectureSearch:
+        neuralArchitectureSearch(args, 'MNIST', 100)
+    if trainOrginalMHIST:
+        args.model = 'ResNet18'
+        args.dataset = 'MHIST'
+        trainModelUsingOrignalData(args)
+    if condenseMHIST:
+        args.model = 'ResNet18'
+        args.dataset = 'MHIST'
+        datasetCondensation(args)
+    if Train_DC_MHIST:
+        args.model = 'ResNet18'
+        args.dataset = 'MHIST'
+        trainModelUsingCondensedData(args, 100, 'ResNet18') # MLP
 if __name__ == '__main__':
-    main(Train_DC_CIFAR10=True)
+    main(condenseMHIST=True)

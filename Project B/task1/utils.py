@@ -8,6 +8,87 @@ from torch.utils.data import Dataset
 from torchvision import datasets, transforms
 from scipy.ndimage.interpolation import rotate as scipyrotate
 from networks import MLP, ConvNet, LeNet, AlexNet, AlexNetBN, VGG11, VGG11BN, ResNet18, ResNet18BN_AP, ResNet18BN
+import pandas as pd
+import cv2
+import random
+
+def load_mhist_images(folder=os.path.join('data', 'mhist_dataset', 'images')):
+    images = []
+    file_names = []
+    for filename in os.listdir(folder):
+        img = cv2.imread(os.path.join(folder,filename))
+        img = cv2.resize(img, (56,56), interpolation = cv2.INTER_AREA)
+        img = img / 255
+        if img is not None:
+            images.append(img)
+            file_names.append(filename)
+    return images, file_names
+
+def loadMHIST(CSVfile = os.path.join('data', 'mhist_dataset', 'annotations.csv')):
+    data, file_names = load_mhist_images()
+    labels = pd.read_csv(CSVfile, usecols = [1])
+    Partitions = pd.read_csv(CSVfile, usecols = [3])
+    labels = labels.to_numpy()
+    Partitions = Partitions.to_numpy()
+    X_train = []
+    X_test = []
+    y_train = []
+    y_test = []
+
+    for i in range(len(data)):
+        if Partitions[i] == 'train':
+            X_train.append(data[i])
+            if (labels[i] == 'SSA'):
+                y_train.append(0)
+            if (labels[i] == 'HP'):
+                y_train.append(1)
+        if Partitions[i] == 'test':
+            X_test.append(data[i])
+            if (labels[i] == 'SSA'):
+                y_test.append(0)
+            if (labels[i] == 'HP'):
+                y_test.append(1)
+
+    return np.asarray(X_train), np.asarray(y_train), np.asarray(X_test), np.asarray(y_test)
+
+def getMHIST():
+    channel = 3
+    num_classes = 2
+    # im_size = (224,224)
+    im_size = (56,56)
+    X_train, y_train, X_test, y_test = loadMHIST()
+
+    # Data Augmentation
+    AugmentedData = []
+    AugmentedLabel = []
+    for i in range(len(X_train)):
+        if(y_train[i]== 0):
+            AugmentedData.append(cv2.rotate(X_train[i], cv2.ROTATE_90_CLOCKWISE))
+            AugmentedLabel.append(0)
+    X_train = np.concatenate((X_train, AugmentedData))
+    y_train = np.concatenate((y_train, AugmentedLabel))
+    c = list(zip(X_train, y_train))
+
+    random.shuffle(c)
+
+    X_train, y_train = zip(*c)
+    X_train = np.asarray(X_train)
+    y_train = np.asarray(y_train)
+
+    # Data Normalization
+    # X_train = X_train-np.mean(X_train)/np.std(X_train)
+    # X_test = X_test-np.mean(X_train)/np.std(X_train)
+
+    # Reshape Data
+    X_train = np.reshape(X_train,(X_train.shape[0],channel,X_train.shape[1],X_train.shape[1]))
+    X_test = np.reshape(X_test,(X_test.shape[0],channel,X_test.shape[1],X_test.shape[1]))
+    mean = np.mean(np.reshape(X_train,(channel, -1)),axis=1)
+    std = np.std(np.reshape(X_train,(channel, -1)),axis=1)
+    meanR = np.reshape(np.repeat(mean,X_train.shape[-1]*X_train.shape[-1],axis=0),(channel,X_train.shape[-1],X_train.shape[-1]))
+    stdR = np.reshape(np.repeat(std,X_train.shape[-1]*X_train.shape[-1],axis=0),(channel,X_train.shape[-1],X_train.shape[-1]))
+    X_train = (X_train - meanR) / stdR
+    X_test = (X_test - meanR) / stdR
+    return X_train, y_train, X_test, y_test, channel, num_classes, im_size, mean.tolist(), std.tolist()
 
 def get_dataset(dataset, data_path):
     if dataset == 'MNIST':
