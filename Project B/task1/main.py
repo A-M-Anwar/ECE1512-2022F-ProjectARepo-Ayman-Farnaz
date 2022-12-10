@@ -5,6 +5,8 @@ import argparse
 import numpy as np
 import torch
 import torch.nn as nn
+import torch
+from fvcore.nn import FlopCountAnalysis
 from torchvision.utils import save_image
 from utils import get_loops, get_dataset, get_network, get_eval_pool, evaluate_synset, get_daparam, match_loss, get_time, TensorDataset, epoch, DiffAugment, ParamDiffAug, getMHIST
 import matplotlib.pyplot as plt
@@ -46,6 +48,11 @@ def trainModelUsingOrignalData(args):
     testingloader = torch.utils.data.DataLoader(testing, batch_size=args.batch_train, shuffle=True, num_workers=0)
 
     net = get_network(args.model, channel, num_classes, im_size).to(args.device) # get a random model
+    
+    ## Use the cpu to calculate number of flops
+    # flops = FlopCountAnalysis(net, testing_images)
+    # print(flops.total())
+
     net.train()
     net_parameters = list(net.parameters())
     optimizer_net = torch.optim.SGD(net.parameters(), lr=args.lr_net)  # optimizer_img for synthetic data
@@ -436,4 +443,4 @@ def main(TrainMNIST = False, TrainCIFAR10 = False, Condense_MNIST = False, Conde
         args.dataset = 'MHIST'
         trainModelUsingCondensedData(args, 20, 'ResNet18') # MLP
 if __name__ == '__main__':
-    main(trainOrginalMHIST=True)
+    main(TrainMNIST=True)
